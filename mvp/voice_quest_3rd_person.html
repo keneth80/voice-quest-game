@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Voice Quest 3D — 오버숄더 음성 조종 프로토타입</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0b0e1a; font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif; }
+  canvas { display:block; touch-action:none; }
+  .hud { position:absolute; z-index:10; color:#fff; }
+  #topbar { top:0; left:0; right:0; padding:10px 14px; display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+  .panel { background:rgba(10,14,30,.72); border:1px solid rgba(120,150,255,.25); border-radius:12px; padding:8px 12px; backdrop-filter:blur(6px); }
+  .bar { height:8px; border-radius:4px; background:#222a44; overflow:hidden; width:140px; margin-top:4px; }
+  .bar>div { height:100%; border-radius:4px; transition:width .3s; }
+  #hpfill { background:linear-gradient(90deg,#ff5f6d,#ff8f70); width:100%; }
+  #bondfill { background:linear-gradient(90deg,#c471ed,#f64f59); width:0%; }
+  .label { font-size:11px; opacity:.85; letter-spacing:.5px; }
+  #chatlog { position:absolute; left:10px; bottom:96px; width:min(62vw,340px); max-height:170px; overflow-y:auto; z-index:10;
+    display:flex; flex-direction:column; gap:4px; pointer-events:none; }
+  .msg { font-size:12.5px; color:#e8ecff; background:rgba(10,14,30,.66); border-radius:10px; padding:5px 10px; width:fit-content; max-width:100%; line-height:1.45; }
+  .msg .who { font-weight:700; margin-right:5px; }
+  .msg.me .who { color:#7fd4ff; } .msg.npc .who { color:#f0a6ff; } .msg.sys { color:#9aa4c7; font-style:italic; }
+  #micbtn { position:absolute; right:18px; bottom:22px; z-index:12; width:76px; height:76px; border-radius:50%;
+    border:3px solid rgba(255,255,255,.35); background:radial-gradient(circle at 35% 30%,#5a7dff,#2b3fae);
+    color:#fff; font-size:30px; box-shadow:0 6px 22px rgba(40,70,255,.45); cursor:pointer; user-select:none; }
+  #micbtn.on { background:radial-gradient(circle at 35% 30%,#ff6b6b,#b3123f); animation:pulse 1.1s infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+  #miclabel { position:absolute; right:14px; bottom:4px; z-index:12; color:#aab6e8; font-size:10.5px; width:84px; text-align:center; }
+  #atkbtn { position:absolute; right:110px; bottom:34px; z-index:12; width:56px; height:56px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.3); background:radial-gradient(circle at 35% 30%,#ffb75e,#d5541f); color:#fff; font-size:22px; cursor:pointer; user-select:none; }
+  #hint { position:absolute; left:50%; transform:translateX(-50%); bottom:6px; z-index:10; color:#7c88b8; font-size:11px; text-align:center; width:92%; pointer-events:none; }
+  #interim { position:absolute; left:50%; transform:translateX(-50%); bottom:110px; z-index:11; color:#fff;
+    background:rgba(70,90,220,.55); border-radius:14px; padding:6px 14px; font-size:14px; display:none; max-width:80vw; }
+  .bubble { position:absolute; z-index:9; transform:translate(-50%,-100%); background:rgba(255,255,255,.94); color:#1a2040;
+    border-radius:12px; padding:6px 12px; font-size:13px; max-width:220px; display:none; pointer-events:none; line-height:1.4; }
+  .bubble::after { content:''; position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
+    border:7px solid transparent; border-top-color:rgba(255,255,255,.94); border-bottom:none; }
+  .bubble.confused { background:rgba(255,240,180,.96); font-weight:700; }
+  .bubble.confused::after { border-top-color:rgba(255,240,180,.96); }
+</style>
+</head>
+<body>
+<div id="topbar" class="hud">
+  <div class="panel">
+    <div class="label">🙂 나 (레벨 1)</div>
+    <div class="bar"><div id="hpfill"></div></div>
+    <div class="label" style="margin-top:6px">💜 미나와의 유대감 <span id="bondpct">0%</span></div>
+    <div class="bar"><div id="bondfill"></div></div>
+  </div>
+  <div class="panel" style="text-align:right">
+    <div class="label">⚔️ 처치한 몹 <b id="kills" style="font-size:16px">0</b></div>
+  </div>
+</div>
+<div id="chatlog" class="hud"></div>
+<div id="pbub" class="bubble"></div>
+<div id="nbub" class="bubble"></div>
+<div id="interim"></div>
+<button id="micbtn">🎤</button>
+<div id="miclabel">누르면 듣기 시작</div>
+<button id="atkbtn">⚔️</button>
+<button id="testbtn" style="position:absolute;left:12px;bottom:26px;z-index:12;border:1px solid rgba(255,255,255,.25);background:rgba(10,14,30,.7);color:#cdd6ff;border-radius:10px;padding:8px 12px;font-size:12px;cursor:pointer;">😕 제스처 테스트</button>
+<div id="hint">땅 터치 = 이동 · 🎤 "공격해" "따라와" "멈춰"는 명령, 나머지는 채팅 · 못 알아들으면 캐릭터가 뒤돌아봅니다</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+/* ================= 기본 셋업 ================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1a24);
+scene.fog = new THREE.Fog(0x0e1a24, 28, 80);
+const camera = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, .1, 200);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+document.body.appendChild(renderer.domElement);
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+scene.add(new THREE.HemisphereLight(0xbfd6ff, 0x2a3d2a, .9));
+const sun = new THREE.DirectionalLight(0xfff2d0, .8); sun.position.set(12,20,8); scene.add(sun);
+
+const rand=(a,b)=>a+Math.random()*(b-a);
+const lerpAngle=(a,b,t)=>{ let d=b-a; while(d>Math.PI)d-=Math.PI*2; while(d<-Math.PI)d+=Math.PI*2; return a+d*t; };
+
+/* ================= 지형 ================= */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(300,300),
+  new THREE.MeshLambertMaterial({color:0x2c5e38}));
+ground.rotation.x=-Math.PI/2; scene.add(ground);
+// 풀 패치
+for(let i=0;i<120;i++){
+  const p=new THREE.Mesh(new THREE.CircleGeometry(rand(.6,2.4),10),
+    new THREE.MeshLambertMaterial({color:Math.random()<.5?0x275434:0x336b40}));
+  p.rotation.x=-Math.PI/2; p.position.set(rand(-90,90),.01,rand(-90,90)); scene.add(p);
+}
+// 나무
+const trees=[];
+for(let i=0;i<70;i++){
+  const g=new THREE.Group();
+  const h=rand(2.2,4.2);
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,h*.45,8), new THREE.MeshLambertMaterial({color:0x5b4023}));
+  trunk.position.y=h*.22; g.add(trunk);
+  const leaf=new THREE.Mesh(new THREE.ConeGeometry(h*.33,h*.75,9), new THREE.MeshLambertMaterial({color:Math.random()<.5?0x2f6b3a:0x3d8a4b}));
+  leaf.position.y=h*.45+h*.36; g.add(leaf);
+  let x,z; do{ x=rand(-90,90); z=rand(-90,90); }while(Math.hypot(x,z)<8);
+  g.position.set(x,0,z); scene.add(g); trees.push(g);
+}
+function blobShadow(r){
+  const m=new THREE.Mesh(new THREE.CircleGeometry(r,16),
+    new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.28}));
+  m.rotation.x=-Math.PI/2; m.position.y=.02; return m;
+}
+
+/* ================= 캐릭터 ================= */
+function makeChar(bodyColor, hairColor){
+  const g=new THREE.Group();
+  const mat=c=>new THREE.MeshLambertMaterial({color:c});
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(.3,.42,.95,12), mat(bodyColor)); body.position.y=.85; g.add(body);
+  // 머리
+  const head=new THREE.Group(); head.position.y=1.62; g.add(head);
+  head.add(new THREE.Mesh(new THREE.SphereGeometry(.3,18,14), mat(0xffdcb8)));
+  const hair=new THREE.Mesh(new THREE.SphereGeometry(.315,18,14), mat(hairColor));
+  hair.position.set(0,.05,-.07); hair.scale.set(1,.95,.9); head.add(hair); // 뒤통수 머리카락
+  const eyeM=mat(0x222222);
+  const e1=new THREE.Mesh(new THREE.SphereGeometry(.035,8,8),eyeM); e1.position.set(-.1,.02,.28); head.add(e1);
+  const e2=e1.clone(); e2.position.x=.1; head.add(e2);
+  // 팔 (어깨 피벗)
+  function arm(x){
+    const pivot=new THREE.Group(); pivot.position.set(x,1.32,0);
+    const a=new THREE.Mesh(new THREE.CylinderGeometry(.075,.075,.55,8), mat(bodyColor));
+    a.position.y=-.27; pivot.add(a);
+    const hand=new THREE.Mesh(new THREE.SphereGeometry(.09,8,8), mat(0xffdcb8));
+    hand.position.y=-.55; pivot.add(hand);
+    g.add(pivot); return pivot;
+  }
+  // 다리
+  function leg(x){
+    const pivot=new THREE.Group(); pivot.position.set(x,.45,0);
+    const l=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,.45,8), mat(0x33415e));
+    l.position.y=-.22; pivot.add(l);
+    g.add(pivot); return pivot;
+  }
+  g.add(blobShadow(.5));
+  return { group:g, head, armL:arm(-.4), armR:arm(.4), legL:leg(-.16), legR:leg(.16) };
+}
+
+const player = Object.assign(makeChar(0x3f7de0,0x4a3524),
+  { name:'나', yaw:0, tx:0, tz:0, hp:100, speed:.075, atkCd:0, walking:false });
+player.group.position.set(0,0,0); player.tx=0; player.tz=0; scene.add(player.group);
+
+const npc = Object.assign(makeChar(0xb06be0,0x7a2f8f),
+  { name:'미나', yaw:0, hp:100, speed:.07, mode:'follow', target:null, atkCd:0, walking:false });
+npc.group.position.set(-1.4,0,-1.2); scene.add(npc.group);
+
+/* "?" 스프라이트 */
+function makeQSprite(){
+  const c=document.createElement('canvas'); c.width=c.height=128;
+  const x=c.getContext('2d');
+  x.font='bold 96px sans-serif'; x.textAlign='center'; x.textBaseline='middle';
+  x.strokeStyle='rgba(0,0,0,.5)'; x.lineWidth=10; x.strokeText('?',64,70);
+  x.fillStyle='#ffd94a'; x.fillText('?',64,70);
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true}));
+  s.scale.set(.8,.8,1); s.visible=false; return s;
+}
+const qmark=makeQSprite(); qmark.position.y=2.5; player.group.add(qmark);
+
+/* ================= 몹 ================= */
+let mobs=[], kills=0, bond=0;
+function makeMob(){
+  const g=new THREE.Group();
+  const hue=rand(.25,.4);
+  const col=new THREE.Color().setHSL(hue,.55,.45);
+  const body=new THREE.Mesh(new THREE.SphereGeometry(.45,14,12), new THREE.MeshLambertMaterial({color:col}));
+  body.scale.y=.85; body.position.y=.42; g.add(body);
+  const eyeW=new THREE.MeshLambertMaterial({color:0xffffff}), eyeB=new THREE.MeshLambertMaterial({color:0x111111});
+  for(const sx of [-.16,.16]){
+    const w=new THREE.Mesh(new THREE.SphereGeometry(.1,8,8),eyeW); w.position.set(sx,.52,.38); g.add(w);
+    const b=new THREE.Mesh(new THREE.SphereGeometry(.05,8,8),eyeB); b.position.set(sx,.52,.46); g.add(b);
+  }
+  g.add(blobShadow(.42));
+  const ang=rand(0,Math.PI*2), d=rand(10,20);
+  const px=player.group.position;
+  g.position.set(px.x+Math.cos(ang)*d, 0, px.z+Math.sin(ang)*d);
+  scene.add(g);
+  return { group:g, hp:40, maxhp:40, speed:.032, atkCd:0, wob:rand(0,9), body };
+}
+for(let i=0;i<6;i++) mobs.push(makeMob());
+setInterval(()=>{ if(mobs.length<8) mobs.push(makeMob()); },4000);
+
+/* ================= UI/채팅 ================= */
+const chatlog=document.getElementById('chatlog');
+function addChat(who,text,cls){
+  const d=document.createElement('div'); d.className='msg '+cls;
+  d.innerHTML = cls==='sys' ? text : '<span class="who">'+who+'</span>'+text;
+  chatlog.appendChild(d);
+  while(chatlog.children.length>7) chatlog.removeChild(chatlog.firstChild);
+}
+const pbub=document.getElementById('pbub'), nbub=document.getElementById('nbub');
+let pbubT=0, nbubT=0;
+function say(ent,text,cls){
+  addChat(ent.name,text,cls);
+  if(ent===player){ pbub.textContent=text; pbub.className='bubble'; pbubT=240; }
+  else { nbub.textContent=text; nbub.className='bubble'; nbubT=240; }
+}
+const npcChat = {
+  greet:['안녕! 오늘도 같이 사냥하자 😊','왔구나! 기다렸어.'],
+  fight:['내가 도와줄게!','같이 잡자!','이 정도쯤이야!'],
+  kill:['우리 호흡 잘 맞는다!','나이스! 👍','역시 우린 좋은 팀이야.'],
+  bond:['너랑 있으면 든든해.','우리 꽤 친해진 것 같아 💜'],
+  reply:['그래그래 ㅎㅎ','응! 알겠어~','오 진짜?','좋아, 계속 가보자!','ㅋㅋ 재밌네'],
+  confused:['응? 방금 뭐라고 했어?','잘 못 들었어~ 다시 말해줄래?']
+};
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+setTimeout(()=>say(npc,pick(npcChat.greet),'npc'),1200);
+function addBond(n){
+  bond=Math.min(100,bond+n);
+  document.getElementById('bondfill').style.width=bond+'%';
+  document.getElementById('bondpct').textContent=Math.round(bond)+'%';
+  if(bond>0 && bond%25<1 && n>0) say(npc,pick(npcChat.bond),'npc');
+}
+
+/* ================= 어리둥절 제스처 ================= */
+/* 인식 실패/모르는 명령 → 뒤돌아 카메라를 보며 어깨 으쓱 + "?" */
+let confusion=0, preYaw=0; // 프레임 카운터, 제스처 전 방향
+function confuse(reason){
+  if(confusion>0) return;
+  preYaw=player.yaw;
+  confusion=150;
+  pbub.textContent = reason==='nohear' ? '뭐라고...? 🤔' : '음? 무슨 뜻인지 모르겠어 🤔';
+  pbub.className='bubble confused'; pbubT=150;
+  addChat('','😕 캐릭터가 명령을 이해하지 못했습니다','sys');
+  if(Math.random()<.5) setTimeout(()=>say(npc,pick(npcChat.confused),'npc'),900);
+}
+document.getElementById('testbtn').onclick=()=>confuse('unknown');
+
+/* ================= 명령 파싱 ================= */
+// 명령조 어미로 끝나면 "명령 시도"로 간주
+const COMMANDISH=/(해줘|해봐|해라|하라|하자|가자|해|줘|봐|라|자|춰|쳐|어라|아라)\s*[.!?]*$/;
+function handleUtterance(text, conf){
+  const t=text.trim(); if(!t) return;
+  // 인식 신뢰도 낮음 (conf=0은 브라우저가 값을 안 주는 경우라 제외)
+  if(conf!==undefined && conf>0 && conf<0.5){ confuse('nohear'); return; }
+  // 너무 짧은 소리 ("어", "음" 등)
+  if(t.replace(/[\s.!?~]/g,'').length<=1){ confuse('nohear'); return; }
+  const has=(...ws)=>ws.some(w=>t.includes(w));
+  if(has('공격','싸워','잡아','쳐','때려')){ say(player,t,'me'); commandAttack(); return; }
+  if(has('따라와','이리 와','이리와','같이 가')){ say(player,t,'me'); npc.mode='follow'; say(npc,'응, 옆에 붙어갈게!','npc'); addBond(2); return; }
+  if(has('멈춰','정지','스탑','그만')){ const p=player.group.position; player.tx=p.x; player.tz=p.z; npc.mode='wait';
+    say(player,t,'me'); say(npc,'알겠어, 여기서 쉴게.','npc'); return; }
+  if(has('도와줘','도와')){ say(player,t,'me'); commandAttack(true); return; }
+  if(has('앞으로','전진')){ say(player,t,'me'); moveForward(6); return; }
+  if(has('뒤로','후진')){ say(player,t,'me'); moveForward(-6); return; }
+  if(has('왼쪽')){ say(player,t,'me'); moveSide(-6); return; }
+  if(has('오른쪽')){ say(player,t,'me'); moveSide(6); return; }
+  // 명령처럼 들리는데 매칭 실패 → 어리둥절 (뒤돌아보기)
+  if(COMMANDISH.test(t) && t.length<=14){ confuse('unknown'); return; }
+  // 그 외 → 채팅으로 전송 (음성→채팅)
+  say(player,t,'me'); addBond(1.5);
+  setTimeout(()=>say(npc,pick(npcChat.reply),'npc'), 700+Math.random()*800);
+}
+function moveForward(d){ player.tx=player.group.position.x+Math.sin(player.yaw)*d;
+  player.tz=player.group.position.z+Math.cos(player.yaw)*d; }
+function moveSide(d){ player.tx=player.group.position.x+Math.sin(player.yaw+Math.PI/2)*Math.sign(d)*Math.abs(d);
+  player.tz=player.group.position.z+Math.cos(player.yaw+Math.PI/2)*Math.sign(d)*Math.abs(d); }
+function nearestMob(pos){
+  let best=null,bd=1e9;
+  for(const m of mobs){ const d=m.group.position.distanceTo(pos); if(d<bd){bd=d;best=m;} }
+  return best;
+}
+function commandAttack(npcOnly){
+  const m=nearestMob(player.group.position);
+  if(!m){ say(npc,'근처에 몹이 안 보여!','npc'); return; }
+  if(!npcOnly){ player.tx=m.group.position.x; player.tz=m.group.position.z; }
+  npc.mode='attack'; npc.target=m;
+  say(npc,pick(npcChat.fight),'npc');
+}
+
+/* ================= 터치 이동 (레이캐스트) ================= */
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
+const markers=[];
+renderer.domElement.addEventListener('pointerdown',e=>{
+  ptr.x=(e.clientX/innerWidth)*2-1; ptr.y=-(e.clientY/innerHeight)*2+1;
+  ray.setFromCamera(ptr,camera);
+  const hit=ray.intersectObject(ground)[0];
+  if(hit){
+    player.tx=hit.point.x; player.tz=hit.point.z;
+    const ring=new THREE.Mesh(new THREE.RingGeometry(.25,.4,24),
+      new THREE.MeshBasicMaterial({color:0x82b4ff,transparent:true,opacity:.9,side:THREE.DoubleSide}));
+    ring.rotation.x=-Math.PI/2; ring.position.set(hit.point.x,.03,hit.point.z);
+    scene.add(ring); markers.push({mesh:ring,life:30});
+  }
+});
+
+/* ================= 음성 인식 ================= */
+const micbtn=document.getElementById('micbtn'), miclabel=document.getElementById('miclabel'),
+      interimEl=document.getElementById('interim');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null, listening=false;
+if(SR){
+  rec=new SR(); rec.lang='ko-KR'; rec.continuous=true; rec.interimResults=true;
+  rec.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      if(r.isFinal){ interimEl.style.display='none'; handleUtterance(r[0].transcript, r[0].confidence); }
+      else interim+=r[0].transcript;
+    }
+    if(interim){ interimEl.textContent='🎤 '+interim; interimEl.style.display='block'; }
+  };
+  rec.onend=()=>{ if(listening) try{rec.start();}catch(_){} };
+  rec.onerror=e=>{
+    if(e.error==='not-allowed'){ addChat('','⚠️ 마이크 권한을 허용해주세요.','sys'); stopMic(); }
+    else if(e.error==='no-speech'&&listening){ confuse('nohear'); }
+  };
+}else{
+  addChat('','⚠️ 이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 열어주세요. (터치 이동은 가능)','sys');
+}
+function startMic(){ if(!rec) return; listening=true; micbtn.classList.add('on');
+  miclabel.textContent='듣는 중… 눌러서 끄기'; try{rec.start();}catch(_){}
+  addChat('','🎙️ 음성 인식 시작 — 말해보세요!','sys'); }
+function stopMic(){ listening=false; micbtn.classList.remove('on');
+  miclabel.textContent='누르면 듣기 시작'; interimEl.style.display='none'; if(rec) try{rec.stop();}catch(_){} }
+micbtn.onclick=()=> listening?stopMic():startMic();
+document.getElementById('atkbtn').onclick=()=>commandAttack();
+
+/* ================= 전투/이펙트 ================= */
+const bursts=[];
+function burst(pos,color){
+  for(let i=0;i<10;i++){
+    const p=new THREE.Mesh(new THREE.SphereGeometry(rand(.04,.09),6,6),
+      new THREE.MeshBasicMaterial({color}));
+    p.position.copy(pos); p.position.y+=.5;
+    scene.add(p);
+    bursts.push({mesh:p,vx:rand(-.08,.08),vy:rand(.05,.16),vz:rand(-.08,.08),life:28});
+  }
+}
+function damage(m,amt,from){
+  m.hp-=amt;
+  burst(m.group.position, from==='npc'?0xd070ff:0xffc44a);
+  m.body.scale.set(1.25,.6,1.25); setTimeout(()=>m.body&&m.body.scale.set(1,.85,1),120);
+  if(m.hp<=0){
+    burst(m.group.position,0x8aff9a); burst(m.group.position,0xffffff);
+    scene.remove(m.group); mobs=mobs.filter(z=>z!==m);
+    kills++; document.getElementById('kills').textContent=kills;
+    addBond(4);
+    if(Math.random()<.6) say(npc,pick(npcChat.kill),'npc');
+  }
+}
+
+/* ================= 걷기 애니메이션 ================= */
+function animChar(c,time,shrug){
+  if(shrug){
+    // 으쓱: 팔을 옆으로 들어올림
+    const k=Math.min(1,shrug);
+    c.armL.rotation.z =  2.4*k + Math.sin(time*8)*.06;
+    c.armR.rotation.z = -2.4*k - Math.sin(time*8)*.06;
+    c.armL.rotation.x = c.armR.rotation.x = 0;
+    c.legL.rotation.x = c.legR.rotation.x = 0;
+    c.head.rotation.z = Math.sin(time*3)*.16; // 갸웃갸웃
+    return;
+  }
+  c.head.rotation.z *= .9;
+  c.armL.rotation.z *= .8; c.armR.rotation.z *= .8;
+  if(c.walking){
+    const s=Math.sin(time*9);
+    c.armL.rotation.x =  s*.7; c.armR.rotation.x = -s*.7;
+    c.legL.rotation.x = -s*.8; c.legR.rotation.x =  s*.8;
+  }else{
+    c.armL.rotation.x *= .85; c.armR.rotation.x *= .85;
+    c.legL.rotation.x *= .85; c.legR.rotation.x *= .85;
+  }
+}
+function moveEnt(ent, tx, tz, stopDist, turnRate){
+  const p=ent.group.position;
+  const dx=tx-p.x, dz=tz-p.z, d=Math.hypot(dx,dz);
+  ent.walking = d>stopDist;
+  if(ent.walking){
+    const targetYaw=Math.atan2(dx,dz);
+    ent.yaw=lerpAngle(ent.yaw,targetYaw,turnRate||.15);
+    p.x+=Math.sin(ent.yaw)*ent.speed; p.z+=Math.cos(ent.yaw)*ent.speed;
+  }
+  ent.group.rotation.y=ent.yaw;
+}
+
+/* ================= 카메라 (오버숄더) ================= */
+let camYaw=0;
+function updateCamera(){
+  const p=player.group.position;
+  if(confusion<=0) camYaw=lerpAngle(camYaw,player.yaw,.05); // 어리둥절 중엔 카메라 고정 → 캐릭터가 '나'를 돌아봄
+  const dist=4.6, h=2.6;
+  const cx=p.x-Math.sin(camYaw)*dist, cz=p.z-Math.cos(camYaw)*dist;
+  camera.position.lerp(new THREE.Vector3(cx,h,cz),.12);
+  const look=new THREE.Vector3(p.x+Math.sin(camYaw)*2.2, 1.35, p.z+Math.cos(camYaw)*2.2);
+  camera.lookAt(look);
+}
+
+/* ================= 말풍선 위치 (3D→2D 투영) ================= */
+function placeBubble(el,t,obj,yOff){
+  if(t<=0){ el.style.display='none'; return; }
+  const v=obj.position.clone(); v.y+=yOff; v.project(camera);
+  if(v.z>1){ el.style.display='none'; return; }
+  el.style.display='block';
+  el.style.left=((v.x*.5+.5)*innerWidth)+'px';
+  el.style.top=((-v.y*.5+.5)*innerHeight - 8)+'px';
+}
+
+/* ================= 메인 루프 ================= */
+let hp=100;
+const clock=new THREE.Clock();
+function loop(){
+  requestAnimationFrame(loop);
+  const time=clock.getElapsedTime();
+  const ppos=player.group.position;
+
+  /* 어리둥절 시퀀스 */
+  let shrugK=0;
+  if(confusion>0){
+    confusion--;
+    player.walking=false;
+    if(confusion>35){
+      // 1) 휙 뒤돌아 카메라(=나)를 본다
+      const toCam=Math.atan2(camera.position.x-ppos.x, camera.position.z-ppos.z);
+      player.yaw=lerpAngle(player.yaw,toCam,.2);
+    }else{
+      // 2) 다시 원래 방향으로 돌아간다
+      player.yaw=lerpAngle(player.yaw,preYaw,.15);
+    }
+    player.group.rotation.y=player.yaw;
+    shrugK = confusion>130 ? (150-confusion)/20 : (confusion<40 ? Math.max(0,confusion-15)/25 : 1);
+    qmark.visible = confusion>40;
+    qmark.position.y = 2.5 + Math.sin(time*4)*.1;
+    if(confusion===0){ qmark.visible=false; player.tx=ppos.x; player.tz=ppos.z; }
+  }else{
+    qmark.visible=false;
+    moveEnt(player, player.tx, player.tz, .25, .15);
+  }
+  animChar(player, time, shrugK);
+
+  /* NPC */
+  if(npc.mode==='follow'||npc.mode==='wait'){
+    if(npc.mode==='follow'){
+      const bx=ppos.x-Math.sin(player.yaw)*1.1-Math.sin(player.yaw+Math.PI/2)*1.2;
+      const bz=ppos.z-Math.cos(player.yaw)*1.1-Math.cos(player.yaw+Math.PI/2)*1.2;
+      moveEnt(npc,bx,bz,.5,.12);
+    } else npc.walking=false;
+    const m=nearestMob(npc.group.position);
+    if(m&&m.group.position.distanceTo(npc.group.position)<5){ npc.mode='attack'; npc.target=m; }
+  }else if(npc.mode==='attack'){
+    const m=npc.target;
+    if(!m||m.hp<=0||!mobs.includes(m)){ npc.mode='follow'; npc.target=null; }
+    else{
+      const mp=m.group.position;
+      moveEnt(npc,mp.x,mp.z,1.3,.15);
+      if(mp.distanceTo(npc.group.position)<1.7 && npc.atkCd<=0){ damage(m,8,'npc'); npc.atkCd=50; }
+    }
+  }
+  npc.atkCd--; player.atkCd--;
+  animChar(npc, time+3, 0);
+
+  /* 플레이어 자동 공격 */
+  const pm=nearestMob(ppos);
+  if(pm&&pm.group.position.distanceTo(ppos)<1.8&&player.atkCd<=0){ damage(pm,10,'me'); player.atkCd=45; }
+
+  /* 몹 AI */
+  for(const m of mobs){
+    const mp=m.group.position, dp=mp.distanceTo(ppos);
+    m.body.position.y=.42+Math.abs(Math.sin(time*4+m.wob))*.12;
+    if(dp<9){
+      const dx=ppos.x-mp.x, dz=ppos.z-mp.z, d=Math.hypot(dx,dz);
+      if(d>1.1){ mp.x+=dx/d*m.speed; mp.z+=dz/d*m.speed; }
+      m.group.rotation.y=Math.atan2(dx,dz);
+      if(d<1.4&&m.atkCd<=0){
+        hp=Math.max(0,hp-4); m.atkCd=70;
+        document.getElementById('hpfill').style.width=hp+'%';
+        if(hp<=0){ hp=100; document.getElementById('hpfill').style.width='100%';
+          addChat('','💫 쓰러졌다… 미나가 일으켜줬다! (+유대감)','sys'); addBond(6); }
+      }
+      m.atkCd--;
+    }else{
+      m.wob+=.015;
+      mp.x+=Math.cos(m.wob)*.008; mp.z+=Math.sin(m.wob*.7)*.008;
+      m.group.rotation.y+= .005;
+    }
+  }
+
+  /* 이펙트 */
+  for(let i=bursts.length-1;i>=0;i--){
+    const b=bursts[i]; b.life--;
+    b.mesh.position.x+=b.vx; b.mesh.position.y+=b.vy; b.mesh.position.z+=b.vz; b.vy-=.008;
+    b.mesh.material.opacity=b.life/28; b.mesh.material.transparent=true;
+    if(b.life<=0){ scene.remove(b.mesh); bursts.splice(i,1); }
+  }
+  for(let i=markers.length-1;i>=0;i--){
+    const mk=markers[i]; mk.life--;
+    mk.mesh.scale.setScalar(1+(30-mk.life)*.06); mk.mesh.material.opacity=mk.life/30;
+    if(mk.life<=0){ scene.remove(mk.mesh); markers.splice(i,1); }
+  }
+
+  updateCamera();
+  if(pbubT>0)pbubT--; if(nbubT>0)nbubT--;
+  placeBubble(pbub,pbubT,player.group,2.3);
+  placeBubble(nbub,nbubT,npc.group,2.3);
+  renderer.render(scene,camera);
+}
+loop();
+</script>
+</body>
+</html>

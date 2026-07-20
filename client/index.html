@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Voice Quest — 멀티플레이 MVP</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0b0e1a; font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif; }
+  canvas { display:block; touch-action:none; }
+  .hud { position:absolute; z-index:10; color:#fff; }
+  #topbar { top:0; left:0; right:0; padding:10px 14px; display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+  .panel { background:rgba(10,14,30,.72); border:1px solid rgba(120,150,255,.25); border-radius:12px; padding:8px 12px; backdrop-filter:blur(6px); }
+  .bar { height:8px; border-radius:4px; background:#222a44; overflow:hidden; width:140px; margin-top:4px; }
+  .bar>div { height:100%; border-radius:4px; transition:width .3s; }
+  #hpfill { background:linear-gradient(90deg,#ff5f6d,#ff8f70); width:100%; }
+  .label { font-size:11px; opacity:.85; letter-spacing:.5px; }
+  #chatlog { position:absolute; left:10px; bottom:96px; width:min(62vw,340px); max-height:170px; overflow-y:auto; z-index:10;
+    display:flex; flex-direction:column; gap:4px; pointer-events:none; }
+  .msg { font-size:12.5px; color:#e8ecff; background:rgba(10,14,30,.66); border-radius:10px; padding:5px 10px; width:fit-content; max-width:100%; line-height:1.45; }
+  .msg .who { font-weight:700; margin-right:5px; }
+  .msg.me .who { color:#7fd4ff; } .msg.other .who { color:#ffd47f; } .msg.sys { color:#9aa4c7; font-style:italic; }
+  #micbtn { position:absolute; right:18px; bottom:22px; z-index:12; width:76px; height:76px; border-radius:50%;
+    border:3px solid rgba(255,255,255,.35); background:radial-gradient(circle at 35% 30%,#5a7dff,#2b3fae);
+    color:#fff; font-size:30px; box-shadow:0 6px 22px rgba(40,70,255,.45); cursor:pointer; user-select:none; }
+  #micbtn.on { background:radial-gradient(circle at 35% 30%,#ff6b6b,#b3123f); animation:pulse 1.1s infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+  #miclabel { position:absolute; right:14px; bottom:4px; z-index:12; color:#aab6e8; font-size:10.5px; width:84px; text-align:center; }
+  #atkbtn { position:absolute; right:110px; bottom:34px; z-index:12; width:56px; height:56px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.3); background:radial-gradient(circle at 35% 30%,#ffb75e,#d5541f); color:#fff; font-size:22px; cursor:pointer; user-select:none; }
+  #testbtn { position:absolute; left:12px; bottom:26px; z-index:12; border:1px solid rgba(255,255,255,.25);
+    background:rgba(10,14,30,.7); color:#cdd6ff; border-radius:10px; padding:8px 12px; font-size:12px; cursor:pointer; }
+  #hint { position:absolute; left:50%; transform:translateX(-50%); bottom:6px; z-index:10; color:#7c88b8; font-size:11px; text-align:center; width:92%; pointer-events:none; }
+  #interim { position:absolute; left:50%; transform:translateX(-50%); bottom:110px; z-index:11; color:#fff;
+    background:rgba(70,90,220,.55); border-radius:14px; padding:6px 14px; font-size:14px; display:none; max-width:80vw; }
+  .bubble { position:absolute; z-index:9; transform:translate(-50%,-100%); background:rgba(255,255,255,.94); color:#1a2040;
+    border-radius:12px; padding:6px 12px; font-size:13px; max-width:220px; display:none; pointer-events:none; line-height:1.4; }
+  .bubble::after { content:''; position:absolute; left:50%; bottom:-7px; transform:translateX(-50%);
+    border:7px solid transparent; border-top-color:rgba(255,255,255,.94); border-bottom:none; }
+  .bubble.confused { background:rgba(255,240,180,.96); font-weight:700; }
+  .bubble.confused::after { border-top-color:rgba(255,240,180,.96); }
+  /* 로비 */
+  #lobby { position:absolute; inset:0; z-index:50; background:rgba(6,9,20,.88); display:flex; align-items:center; justify-content:center; }
+  #lobbybox { width:min(90vw,380px); background:rgba(16,22,44,.95); border:1px solid rgba(120,150,255,.35);
+    border-radius:18px; padding:26px 24px; color:#fff; text-align:center; }
+  #lobbybox h1 { font-size:20px; margin-bottom:4px; }
+  #lobbybox p { font-size:12px; color:#9aa4c7; margin-bottom:16px; }
+  #lobbybox input { width:100%; padding:11px 12px; border-radius:10px; border:1px solid rgba(120,150,255,.35);
+    background:#0d1226; color:#fff; font-size:14px; margin-bottom:10px; text-align:center; }
+  .lbtn { width:100%; padding:12px; border:none; border-radius:10px; font-size:14px; font-weight:700;
+    cursor:pointer; margin-top:8px; color:#fff; }
+  #mkroom { background:linear-gradient(90deg,#4a6cf7,#7a4af7); }
+  #joinroom { background:linear-gradient(90deg,#2fa36b,#2f8fa3); }
+  #solobtn { background:#333d5e; }
+  #roomcode { font-size:34px; font-weight:800; letter-spacing:6px; color:#ffd94a; margin:10px 0; display:none; }
+  #lobbymsg { font-size:12px; color:#8fd4ff; min-height:16px; margin-top:8px; }
+  #playerspanel { display:none; }
+</style>
+</head>
+<body>
+<div id="lobby">
+  <div id="lobbybox">
+    <h1>🗡️ Voice Quest</h1>
+    <p>음성으로 조종하고, 음성이 채팅이 되는 무협 세계</p>
+    <input id="nameinput" maxlength="8" placeholder="닉네임 (예: 비광)">
+    <button class="lbtn" id="mkroom">🏠 방 만들기 (코드 생성)</button>
+    <input id="codeinput" maxlength="4" placeholder="참가 코드 4자리" style="margin-top:14px">
+    <button class="lbtn" id="joinroom">🚪 코드로 참가</button>
+    <button class="lbtn" id="solobtn">🌙 혼자 수련하기</button>
+    <div id="roomcode"></div>
+    <div id="lobbymsg"></div>
+  </div>
+</div>
+
+<div id="topbar" class="hud">
+  <div class="panel">
+    <div class="label">🗡️ <span id="myname">나</span></div>
+    <div class="bar"><div id="hpfill"></div></div>
+  </div>
+  <div class="panel" style="text-align:right">
+    <div class="label">⚔️ 처치 <b id="kills" style="font-size:16px">0</b> · 👥 접속 <b id="pcount" style="font-size:16px">1</b></div>
+  </div>
+</div>
+<div id="chatlog" class="hud"></div>
+<div id="pbub" class="bubble"></div>
+<div id="interim"></div>
+<button id="micbtn">🎤</button>
+<div id="miclabel">누르면 듣기 시작</div>
+<button id="atkbtn">⚔️</button>
+<button id="testbtn">😕 제스처 테스트</button>
+<div id="hint">땅 터치 = 이동 · 🎤 명령("공격해","멈춰")과 채팅이 모두 음성으로 · 친구에게 방 코드를 알려주세요</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

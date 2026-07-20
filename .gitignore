@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.DS_Store
+# 에셋 원본 팩(90MB) — itch.io에서 재다운로드 가능, 게임에 필요한 파일은 client/public/models/에 있음
+assets/

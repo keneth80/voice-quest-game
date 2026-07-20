@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Voice Quest — 음성 조종 프로토타입</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0b0e1a; font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif; }
+  #game { position:absolute; inset:0; touch-action:none; }
+  .hud { position:absolute; z-index:10; color:#fff; }
+  #topbar { top:0; left:0; right:0; padding:10px 14px; display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+  .panel { background:rgba(10,14,30,.72); border:1px solid rgba(120,150,255,.25); border-radius:12px; padding:8px 12px; backdrop-filter:blur(6px); }
+  .bar { height:8px; border-radius:4px; background:#222a44; overflow:hidden; width:140px; margin-top:4px; }
+  .bar>div { height:100%; border-radius:4px; transition:width .3s; }
+  #hpfill { background:linear-gradient(90deg,#ff5f6d,#ff8f70); }
+  #bondfill { background:linear-gradient(90deg,#c471ed,#f64f59); }
+  .label { font-size:11px; opacity:.85; letter-spacing:.5px; }
+  #chatlog { position:absolute; left:10px; bottom:96px; width:min(62vw,340px); max-height:180px; overflow-y:auto; z-index:10;
+    display:flex; flex-direction:column; gap:4px; pointer-events:none; }
+  .msg { font-size:12.5px; color:#e8ecff; background:rgba(10,14,30,.66); border-radius:10px; padding:5px 10px; width:fit-content; max-width:100%; line-height:1.45; }
+  .msg .who { font-weight:700; margin-right:5px; }
+  .msg.me .who { color:#7fd4ff; } .msg.npc .who { color:#f0a6ff; } .msg.sys { color:#9aa4c7; font-style:italic; }
+  #micbtn { position:absolute; right:18px; bottom:22px; z-index:12; width:76px; height:76px; border-radius:50%;
+    border:3px solid rgba(255,255,255,.35); background:radial-gradient(circle at 35% 30%,#5a7dff,#2b3fae);
+    color:#fff; font-size:30px; box-shadow:0 6px 22px rgba(40,70,255,.45); cursor:pointer; user-select:none; }
+  #micbtn.on { background:radial-gradient(circle at 35% 30%,#ff6b6b,#b3123f); animation:pulse 1.1s infinite; }
+  @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+  #miclabel { position:absolute; right:14px; bottom:4px; z-index:12; color:#aab6e8; font-size:10.5px; width:84px; text-align:center; }
+  #hint { position:absolute; left:50%; transform:translateX(-50%); bottom:6px; z-index:10; color:#7c88b8; font-size:11px; text-align:center; width:90%; pointer-events:none; }
+  #interim { position:absolute; left:50%; transform:translateX(-50%); bottom:110px; z-index:11; color:#fff;
+    background:rgba(70,90,220,.55); border-radius:14px; padding:6px 14px; font-size:14px; display:none; max-width:80vw; }
+  #atkbtn { position:absolute; right:110px; bottom:34px; z-index:12; width:56px; height:56px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.3); background:radial-gradient(circle at 35% 30%,#ffb75e,#d5541f); color:#fff; font-size:22px; cursor:pointer; user-select:none; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="topbar" class="hud">
+  <div class="panel">
+    <div class="label">🙂 나 (레벨 1)</div>
+    <div class="bar"><div id="hpfill" style="width:100%"></div></div>
+    <div class="label" style="margin-top:6px">💜 미나와의 유대감 <span id="bondpct">0%</span></div>
+    <div class="bar"><div id="bondfill" style="width:0%"></div></div>
+  </div>
+  <div class="panel" style="text-align:right">
+    <div class="label">⚔️ 처치한 몹 <b id="kills" style="font-size:16px">0</b></div>
+  </div>
+</div>
+
+<div id="chatlog" class="hud"></div>
+<div id="interim"></div>
+<button id="micbtn">🎤</button>
+<div id="miclabel">누르면 듣기 시작</div>
+<button id="atkbtn">⚔️</button>
+<div id="hint">화면 터치 = 이동 · 🎤 말하기: "공격해", "따라와", "멈춰" 는 명령 / 나머지 말은 그대로 채팅이 됩니다</div>
+
+<script>
+"use strict";
+const cv = document.getElementById('game'), ctx = cv.getContext('2d');
+let W=0,H=0;
+function resize(){ W=cv.width=innerWidth*devicePixelRatio; H=cv.height=innerHeight*devicePixelRatio;
+  cv.style.width=innerWidth+'px'; cv.style.height=innerHeight+'px'; }
+addEventListener('resize',resize); resize();
+const DPR=()=>devicePixelRatio;
+
+/* ---------- 월드 ---------- */
+const world = { w:2400, h:2400 };
+const cam = { x:0, y:0 };
+const rand=(a,b)=>a+Math.random()*(b-a);
+
+const trees=[]; for(let i=0;i<60;i++) trees.push({x:rand(60,world.w-60),y:rand(60,world.h-60),r:rand(14,26)});
+
+/* ---------- 엔티티 ---------- */
+const player = { x:1200,y:1200, tx:1200,ty:1200, r:16, hp:100, maxhp:100, speed:2.6,
+  atkCd:0, name:'나', bubble:null, bubbleT:0, dir:0, walking:false };
+const npc = { x:1150,y:1250, tx:1150,ty:1250, r:15, hp:100, speed:2.4, mode:'follow',
+  name:'미나', bubble:null, bubbleT:0, dir:0, atkCd:0, walking:false };
+let bond=0, kills=0;
+let mobs=[], particles=[], dmgTexts=[];
+
+function spawnMob(){
+  const edge=Math.floor(Math.random()*4);
+  let x,y;
+  const px=player.x, py=player.y, d=rand(350,600), ang=rand(0,Math.PI*2);
+  x=Math.min(world.w-40,Math.max(40,px+Math.cos(ang)*d));
+  y=Math.min(world.h-40,Math.max(40,py+Math.sin(ang)*d));
+  mobs.push({x,y,r:15,hp:40,maxhp:40,speed:1.15,atkCd:0,hue:rand(90,150),wobble:rand(0,9)});
+}
+for(let i=0;i<6;i++) spawnMob();
+setInterval(()=>{ if(mobs.length<8) spawnMob(); },4000);
+
+/* ---------- 채팅/말풍선 ---------- */
+const chatlog=document.getElementById('chatlog');
+function addChat(who,text,cls){
+  const d=document.createElement('div'); d.className='msg '+cls;
+  d.innerHTML = cls==='sys' ? text : '<span class="who">'+who+'</span>'+text;
+  chatlog.appendChild(d);
+  while(chatlog.children.length>7) chatlog.removeChild(chatlog.firstChild);
+}
+function say(ent,text,cls){ ent.bubble=text; ent.bubbleT=240; addChat(ent.name,text,cls); }
+
+/* ---------- NPC 대사 ---------- */
+const npcChat = {
+  greet:['안녕! 오늘도 같이 사냥하자 😊','왔구나! 기다렸어.'],
+  fight:['내가 도와줄게!','같이 잡자!','이 정도쯤이야!'],
+  kill:['우리 호흡 잘 맞는다!','나이스! 👍','역시 우린 좋은 팀이야.'],
+  bond:['너랑 있으면 든든해.','우리 꽤 친해진 것 같아 💜'],
+  reply:['그래그래 ㅎㅎ','응! 알겠어~','오 진짜?','좋아, 계속 가보자!','ㅋㅋ 재밌네']
+};
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+setTimeout(()=>say(npc,pick(npcChat.greet),'npc'),1200);
+
+function addBond(n){
+  bond=Math.min(100,bond+n);
+  document.getElementById('bondfill').style.width=bond+'%';
+  document.getElementById('bondpct').textContent=Math.round(bond)+'%';
+  if(bond>0 && bond%25<1 && n>0) say(npc,pick(npcChat.bond),'npc');
+}
+
+/* ---------- 명령 파싱 (음성/자연어) ---------- */
+function handleUtterance(text){
+  const t=text.trim(); if(!t) return;
+  const has=(...ws)=>ws.some(w=>t.includes(w));
+  if(has('공격','싸워','잡아','쳐','때려')){
+    say(player,t,'me'); commandAttack(); return;
+  }
+  if(has('따라와','이리 와','이리와','같이 가')){
+    say(player,t,'me'); npc.mode='follow'; say(npc,'응, 옆에 붙어갈게!','npc'); addBond(2); return;
+  }
+  if(has('멈춰','정지','스탑','그만')){
+    say(player,t,'me'); player.tx=player.x; player.ty=player.y; npc.mode='wait';
+    say(npc,'알겠어, 여기서 쉴게.','npc'); return;
+  }
+  if(has('도와줘','도와')){
+    say(player,t,'me'); commandAttack(true); return;
+  }
+  if(has('앞으로','전진')){ say(player,t,'me'); moveDir(0,-1); return; }
+  if(has('뒤로','후진')){ say(player,t,'me'); moveDir(0,1); return; }
+  if(has('왼쪽')){ say(player,t,'me'); moveDir(-1,0); return; }
+  if(has('오른쪽')){ say(player,t,'me'); moveDir(1,0); return; }
+  // 명령이 아니면 → 그대로 채팅 전송 (음성→채팅)
+  say(player,t,'me');
+  addBond(1.5);
+  setTimeout(()=>say(npc,pick(npcChat.reply),'npc'), 700+Math.random()*800);
+}
+function moveDir(dx,dy){ player.tx=player.x+dx*220; player.ty=player.y+dy*220; }
+function nearestMob(x,y){
+  let best=null,bd=1e9;
+  for(const m of mobs){ const d=Math.hypot(m.x-x,m.y-y); if(d<bd){bd=d;best=m;} }
+  return best;
+}
+function commandAttack(npcOnly){
+  const m=nearestMob(player.x,player.y);
+  if(!m){ say(npc,'근처에 몹이 안 보여!','npc'); return; }
+  if(!npcOnly){ player.tx=m.x; player.ty=m.y; }
+  npc.mode='attack'; npc.target=m;
+  say(npc,pick(npcChat.fight),'npc');
+}
+
+/* ---------- 터치 이동 ---------- */
+cv.onpointerdown = e=>{
+  const wx = e.clientX + cam.x, wy = e.clientY + cam.y;
+  player.tx = Math.min(world.w-20,Math.max(20,wx));
+  player.ty = Math.min(world.h-20,Math.max(20,wy));
+  particles.push({x:player.tx,y:player.ty,r:2,life:30,ring:true});
+};
+
+/* ---------- 음성 인식 ---------- */
+const micbtn=document.getElementById('micbtn'), miclabel=document.getElementById('miclabel'),
+      interimEl=document.getElementById('interim');
+const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null, listening=false;
+if(SR){
+  rec=new SR(); rec.lang='ko-KR'; rec.continuous=true; rec.interimResults=true;
+  rec.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      if(r.isFinal){ interimEl.style.display='none'; handleUtterance(r[0].transcript); }
+      else interim+=r[0].transcript;
+    }
+    if(interim){ interimEl.textContent='🎤 '+interim; interimEl.style.display='block'; }
+  };
+  rec.onend=()=>{ if(listening) try{rec.start();}catch(_){} };
+  rec.onerror=e=>{ if(e.error==='not-allowed'){ addChat('','⚠️ 마이크 권한을 허용해주세요.','sys'); stopMic(); } };
+}else{
+  addChat('','⚠️ 이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 열어주세요. (터치 이동은 가능)','sys');
+}
+function startMic(){ if(!rec) return; listening=true; micbtn.classList.add('on');
+  miclabel.textContent='듣는 중… 눌러서 끄기'; try{rec.start();}catch(_){}
+  addChat('','🎙️ 음성 인식 시작 — 말해보세요!','sys'); }
+function stopMic(){ listening=false; micbtn.classList.remove('on');
+  miclabel.textContent='누르면 듣기 시작'; interimEl.style.display='none'; if(rec) try{rec.stop();}catch(_){} }
+micbtn.onclick=()=> listening?stopMic():startMic();
+document.getElementById('atkbtn').onclick=()=>commandAttack();
+
+/* ---------- 업데이트 ---------- */
+function moveToward(ent,tx,ty,stop){
+  const dx=tx-ent.x, dy=ty-ent.y, d=Math.hypot(dx,dy);
+  ent.walking = d>stop;
+  if(d>stop){ ent.x+=dx/d*ent.speed; ent.y+=dy/d*ent.speed; ent.dir=Math.atan2(dy,dx); }
+}
+function attackAnim(x,y,hue){
+  for(let i=0;i<8;i++) particles.push({x,y,vx:rand(-2,2),vy:rand(-2,2),r:rand(2,4),life:22,hue});
+}
+function damage(m,amt,from){
+  m.hp-=amt;
+  dmgTexts.push({x:m.x,y:m.y-22,t:amt,life:40});
+  attackAnim(m.x,m.y,from==='npc'?290:45);
+  if(m.hp<=0){
+    mobs=mobs.filter(z=>z!==m);
+    kills++; document.getElementById('kills').textContent=kills;
+    addBond(4);
+    if(Math.random()<.6) say(npc,pick(npcChat.kill),'npc');
+    for(let i=0;i<14;i++) particles.push({x:m.x,y:m.y,vx:rand(-3,3),vy:rand(-3,3),r:rand(2,5),life:30,hue:m.hue});
+  }
+}
+
+function update(){
+  moveToward(player,player.tx,player.ty,4);
+  // NPC AI
+  if(npc.mode==='follow'||npc.mode==='wait'){
+    if(npc.mode==='follow') moveToward(npc,player.x-34,player.y+26,10);
+    const m=nearestMob(npc.x,npc.y);
+    if(m&&Math.hypot(m.x-npc.x,m.y-npc.y)<120){ npc.mode='attack'; npc.target=m; }
+  }else if(npc.mode==='attack'){
+    const m=npc.target;
+    if(!m||m.hp<=0||!mobs.includes(m)){ npc.mode='follow'; npc.target=null; }
+    else{
+      moveToward(npc,m.x,m.y,34);
+      if(Math.hypot(m.x-npc.x,m.y-npc.y)<44 && npc.atkCd<=0){ damage(m,8,'npc'); npc.atkCd=50; }
+    }
+  }
+  npc.atkCd--; player.atkCd--;
+  // 플레이어 자동 공격 (사거리 내)
+  const pm=nearestMob(player.x,player.y);
+  if(pm&&Math.hypot(pm.x-player.x,pm.y-player.y)<48&&player.atkCd<=0){ damage(pm,10,'me'); player.atkCd=45; }
+  // 몹 AI
+  for(const m of mobs){
+    const dp=Math.hypot(player.x-m.x,player.y-m.y);
+    if(dp<200){ moveToward(m,player.x,player.y,30);
+      if(dp<38&&m.atkCd<=0){ player.hp=Math.max(0,player.hp-4); m.atkCd=70;
+        document.getElementById('hpfill').style.width=player.hp+'%';
+        if(player.hp<=0){ player.hp=100; document.getElementById('hpfill').style.width='100%';
+          addChat('','💫 쓰러졌다… 미나가 일으켜줬다! (+유대감)','sys'); addBond(6); }
+      } m.atkCd--;
+    } else { m.wobble+=.02; m.x+=Math.cos(m.wobble)*.3; m.y+=Math.sin(m.wobble*.7)*.3; }
+  }
+  particles=particles.filter(p=>{ p.life--; if(p.vx){p.x+=p.vx;p.y+=p.vy;} else if(p.ring)p.r+=1.2; return p.life>0; });
+  dmgTexts=dmgTexts.filter(t=>{ t.y-=.8; t.life--; return t.life>0; });
+  if(player.bubbleT>0)player.bubbleT--; if(npc.bubbleT>0)npc.bubbleT--;
+  // 카메라
+  cam.x += (player.x-innerWidth/2-cam.x)*.08;
+  cam.y += (player.y-innerHeight/2-cam.y)*.08;
+}
+
+/* ---------- 렌더 ---------- */
+function drawChar(e,color,face){
+  const x=e.x-cam.x, y=e.y-cam.y;
+  ctx.save(); ctx.translate(x,y);
+  // 그림자
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0,e.r*.85,e.r*.9,e.r*.38,0,0,7); ctx.fill();
+  const hop = e.walking? Math.sin(Date.now()/90)*2.5 : 0;
+  ctx.translate(0,hop);
+  // 몸
+  ctx.fillStyle=color; ctx.beginPath(); ctx.ellipse(0,2,e.r*.78,e.r*.95,0,0,7); ctx.fill();
+  // 머리
+  ctx.fillStyle='#ffdcb8'; ctx.beginPath(); ctx.arc(0,-e.r*.85,e.r*.62,0,7); ctx.fill();
+  ctx.fillStyle=face; ctx.beginPath(); ctx.arc(0,-e.r*1.05,e.r*.62,Math.PI,0); ctx.fill();
+  // 눈
+  ctx.fillStyle='#222'; ctx.beginPath(); ctx.arc(-4,-e.r*.82,1.8,0,7); ctx.arc(4,-e.r*.82,1.8,0,7); ctx.fill();
+  ctx.restore();
+  // 이름
+  ctx.fillStyle='rgba(255,255,255,.9)'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(e.name,x,y+e.r+16);
+  // 말풍선
+  if(e.bubbleT>0&&e.bubble){
+    ctx.font='13px sans-serif';
+    const w=Math.min(220,ctx.measureText(e.bubble).width+18);
+    const bx=x-w/2, by=y-e.r-46;
+    ctx.fillStyle='rgba(255,255,255,.94)';
+    ctx.beginPath(); ctx.roundRect(bx,by,w,26,12); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x-5,by+26); ctx.lineTo(x+5,by+26); ctx.lineTo(x,by+33); ctx.fill();
+    ctx.fillStyle='#1a2040'; ctx.fillText(e.bubble.length>18?e.bubble.slice(0,18)+'…':e.bubble,x,by+17);
+  }
+}
+function draw(){
+  ctx.setTransform(DPR(),0,0,DPR(),0,0);
+  // 땅
+  const g=ctx.createLinearGradient(0,0,0,innerHeight);
+  g.addColorStop(0,'#1c3b2a'); g.addColorStop(1,'#14291f');
+  ctx.fillStyle=g; ctx.fillRect(0,0,innerWidth,innerHeight);
+  // 그리드 (원근감)
+  ctx.strokeStyle='rgba(255,255,255,.045)'; ctx.lineWidth=1;
+  const gs=90;
+  for(let x=-cam.x%gs;x<innerWidth;x+=gs){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,innerHeight); ctx.stroke(); }
+  for(let y=-cam.y%gs;y<innerHeight;y+=gs){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(innerWidth,y); ctx.stroke(); }
+  // 나무
+  for(const t of trees){
+    const x=t.x-cam.x,y=t.y-cam.y;
+    if(x<-40||x>innerWidth+40||y<-60||y>innerHeight+40) continue;
+    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(x,y+4,t.r*.9,t.r*.35,0,0,7); ctx.fill();
+    ctx.fillStyle='#5b4023'; ctx.fillRect(x-3,y-t.r*.6,6,t.r*.8);
+    ctx.fillStyle='#2f6b3a'; ctx.beginPath(); ctx.arc(x,y-t.r,t.r,0,7); ctx.fill();
+    ctx.fillStyle='#3d8a4b'; ctx.beginPath(); ctx.arc(x-t.r*.3,y-t.r*1.15,t.r*.6,0,7); ctx.fill();
+  }
+  // 목적지 링
+  for(const p of particles) if(p.ring){
+    ctx.strokeStyle='rgba(130,180,255,'+(p.life/30)+')'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(p.x-cam.x,p.y-cam.y,p.r,0,7); ctx.stroke();
+  }
+  // 몹
+  for(const m of mobs){
+    const x=m.x-cam.x,y=m.y-cam.y;
+    ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x,y+m.r*.8,m.r*.85,m.r*.35,0,0,7); ctx.fill();
+    const bounce=Math.sin(Date.now()/160+m.wobble)*2;
+    ctx.fillStyle='hsl('+m.hue+',55%,45%)';
+    ctx.beginPath(); ctx.ellipse(x,y+bounce,m.r,m.r*.85,0,0,7); ctx.fill();
+    ctx.fillStyle='hsl('+m.hue+',55%,60%)';
+    ctx.beginPath(); ctx.ellipse(x,y+bounce-3,m.r*.7,m.r*.5,0,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x-5,y+bounce-2,3.4,0,7); ctx.arc(x+5,y+bounce-2,3.4,0,7); ctx.fill();
+    ctx.fillStyle='#111'; ctx.beginPath(); ctx.arc(x-5,y+bounce-2,1.6,0,7); ctx.arc(x+5,y+bounce-2,1.6,0,7); ctx.fill();
+    // HP바
+    ctx.fillStyle='rgba(0,0,0,.5)'; ctx.fillRect(x-16,y-m.r-14,32,5);
+    ctx.fillStyle='#6bff8a'; ctx.fillRect(x-16,y-m.r-14,32*(m.hp/m.maxhp),5);
+  }
+  drawChar(npc,'#b06be0','#e8b3ff');
+  drawChar(player,'#3f7de0','#8fc4ff');
+  // 파티클
+  for(const p of particles) if(!p.ring){
+    ctx.fillStyle='hsla('+(p.hue||45)+',90%,65%,'+(p.life/25)+')';
+    ctx.beginPath(); ctx.arc(p.x-cam.x,p.y-cam.y,p.r,0,7); ctx.fill();
+  }
+  // 데미지 숫자
+  ctx.font='bold 14px sans-serif'; ctx.textAlign='center';
+  for(const t of dmgTexts){
+    ctx.fillStyle='rgba(255,220,90,'+(t.life/40)+')';
+    ctx.fillText('-'+t.t,t.x-cam.x,t.y-cam.y);
+  }
+}
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
