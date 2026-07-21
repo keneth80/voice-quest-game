@@ -7,7 +7,8 @@ import { blobShadow } from '../world/terrain';
  * 캐릭터 glb에는 클립이 없고, 같은 Rig_Medium 골격을 쓰는 애니메이션 glb에서
  * 클립을 가져와 이름 기반(PropertyBinding)으로 재생한다.
  * 캐릭터/클립/무기 교체는 아래 상수만 바꾸면 된다. */
-const MODEL_URL = '/models/Knight.glb';
+const CHARACTERS = ['Knight', 'Barbarian', 'Rogue', 'Rogue_Hooded', 'Mage', 'Ranger'];
+const MY_CHARACTER = 'Knight'; // 내 캐릭터 (원본도 로컬은 고정 청색 도포였던 것과 동일한 정책)
 const ANIM_URLS = [
   '/models/Rig_Medium_MovementBasic.glb',
   '/models/Rig_Medium_General.glb',
@@ -36,17 +37,22 @@ export interface GltfHeroVisual {
   sword: THREE.Object3D | null;
 }
 
-let template: { scene: THREE.Object3D; clips: THREE.AnimationClip[]; sword: THREE.Object3D | null } | null = null;
+let template: { scenes: Record<string, THREE.Object3D>; clips: THREE.AnimationClip[]; sword: THREE.Object3D | null } | null = null;
 
 export async function loadHeroModel(): Promise<boolean> {
   try {
     const loader = new GLTFLoader();
-    const [chr, ...anims] = await Promise.all([MODEL_URL, ...ANIM_URLS].map(u => loader.loadAsync(u)));
+    const [chrs, anims] = await Promise.all([
+      Promise.all(CHARACTERS.map(n => loader.loadAsync(`/models/${n}.glb`))),
+      Promise.all(ANIM_URLS.map(u => loader.loadAsync(u))),
+    ]);
     let sword: THREE.Object3D | null = null;
     try { sword = (await loader.loadAsync(SWORD_URL)).scene; } catch (_) { /* 검 로딩 실패해도 캐릭터는 진행 */ }
+    const scenes: Record<string, THREE.Object3D> = {};
+    CHARACTERS.forEach((n, i) => { scenes[n] = chrs[i].scene; });
     template = {
-      scene: chr.scene,
-      clips: [...chr.animations, ...anims.flatMap(a => a.animations)],
+      scenes,
+      clips: anims.flatMap(a => a.animations),
       sword,
     };
     return true;
@@ -56,10 +62,19 @@ export async function loadHeroModel(): Promise<boolean> {
   }
 }
 
-/* 로드된 템플릿에서 인스턴스 생성. tint는 원격 플레이어 구분용(내 캐릭터는 원본 텍스처) */
-export function makeGltfHero(tint?: number): GltfHeroVisual | null {
+/* 원격 플레이어 캐릭터 배정 — peer id 해시로 6종 중 하나 (모든 클라이언트에서 동일 결과) */
+export function pickCharacter(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return CHARACTERS[h % CHARACTERS.length];
+}
+
+/* 로드된 템플릿에서 인스턴스 생성.
+ * character: 6종 중 하나(기본 Knight). tint는 폴백/특수용 — 캐릭터가 다양해져 기본 미사용 */
+export function makeGltfHero(tint?: number, character: string = MY_CHARACTER): GltfHeroVisual | null {
   if (!template) return null;
-  const model = SkeletonUtils.clone(template.scene) as THREE.Object3D;
+  const scene = template.scenes[character] ?? template.scenes[MY_CHARACTER];
+  const model = SkeletonUtils.clone(scene) as THREE.Object3D;
   const root = new THREE.Group();
   model.rotation.y = FACE_Y;
   model.scale.setScalar(SCALE);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { scene } from '../world/scene';
 import { makeHero } from '../hero/makeHero';
-import { makeGltfHero } from '../hero/gltfHero';
+import { makeGltfHero, pickCharacter } from '../hero/gltfHero';
 import { nameSprite } from '../hero/sprites';
 import { state } from './state';
 import type { Remote } from './state';
@@ -18,7 +18,8 @@ function colorFromId(id: string) {
 export function ensureRemote(id: string, name?: string): Remote {
   if (state.remotes[id]) return state.remotes[id];
   const group = new THREE.Group();
-  const visual = makeGltfHero(colorFromId(id)) ?? makeHero(colorFromId(id));
+  // 캐릭터 6종을 id 해시로 배정 (모든 클라이언트에서 동일하게 보임) — 틴트 대신 캐릭터로 구분
+  const visual = makeGltfHero(undefined, pickCharacter(id)) ?? makeHero(colorFromId(id));
   group.add(visual.root);
   const tag = nameSprite(name || '???', '#ffd47f'); tag.position.y = 2.75; group.add(tag);
   scene.add(group);

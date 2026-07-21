@@ -16,9 +16,10 @@ import type { LocalStateProvider, Transport, TransportCallbacks } from './net/tr
 import { startLoop } from './game/loop';
 
 import { loadHeroModel } from './hero/gltfHero';
+import { loadMobModel } from './game/mobs';
+import { loadNatureAssets } from './world/terrain';
 
 mountRenderer();
-buildTerrain();
 
 /* transport가 10Hz 송신 시 당겨가는 로컬 상태 */
 const provider: LocalStateProvider = {
@@ -62,9 +63,10 @@ function createTransport(): Transport {
 }
 
 async function boot() {
-  // 글TF 캐릭터 템플릿을 먼저 로드 (로컬 파일, 실패 시 절차 캐릭터 폴백)
-  const ok = await loadHeroModel();
+  // 글TF 템플릿 로드 (로컬 파일, 실패 시 각각 절차 비주얼로 폴백)
+  const [ok] = await Promise.all([loadHeroModel(), loadMobModel(), loadNatureAssets()]);
   if (!ok) addChat('', '⚠️ 리얼 캐릭터 로딩 실패 — 기본 캐릭터로 계속합니다', 'sys');
+  buildTerrain(); // 자연 에셋 로드 후 배치 (실패 시 절차 지형 폴백)
   initPlayer();
   initLobby({
     startHost() { const t = createTransport(); state.net = t; t.host(); },

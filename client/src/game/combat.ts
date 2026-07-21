@@ -27,7 +27,7 @@ export function burst(pos: THREE.Vector3, color: number) {
 export function damage(m: Mob, amt: number, from?: { x: number; z: number }) {
   m.hp -= amt;
   burst(m.group.position, 0xffc44a);
-  m.body.scale.set(1.25, .6, 1.25); setTimeout(() => m.body && m.body.scale.set(1, .85, 1), 120);
+  if (m.body) { m.body.scale.set(1.25, .6, 1.25); setTimeout(() => m.body && m.body.scale.set(1, .85, 1), 120); } // 슬라임 폴백 스쿼시
   // 피격 넉백: 공격자 반대 방향으로 밀려남 (게스트에겐 10Hz 스냅샷으로 전파)
   if (from) {
     const mp = m.group.position;

@@ -79,7 +79,8 @@ function loop() {
     // 몹 AI: 가장 가까운 플레이어 추격
     for (const m of state.mobs) {
       const mp = m.group.position;
-      m.body.position.y = .42 + Math.abs(Math.sin(time * 4 + m.wob)) * .12;
+      if (m.mixer) m.mixer.update(dt);
+      if (m.body) m.body.position.y = .42 + Math.abs(Math.sin(time * 4 + m.wob)) * .12; // 슬라임 폴백 바운스
       let tgt: { x: number; z: number; id: string } | null = null, td = 1e9;
       for (const pp of allPlayerPos()) { const d = Math.hypot(mp.x - pp.x, mp.z - pp.z); if (d < td) { td = d; tgt = pp; } }
       if (tgt && td < 9) {
@@ -103,6 +104,7 @@ function loop() {
     /* 게스트: 몹 위치 보간 + 내 체력만 로컬 판정 */
     for (const v of state.guestMobs) {
       const mp = v.group.position;
+      if (v.mixer) v.mixer.update(dt);
       if (v.tx !== undefined) { mp.x += (v.tx - mp.x) * .2; mp.z += (v.tz! - mp.z) * .2; }
       v.wob = (v.wob || 0);
       const dp = Math.hypot(mp.x - ppos.x, mp.z - ppos.z);

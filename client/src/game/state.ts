@@ -6,7 +6,8 @@ export type NetMode = 'solo' | 'host' | 'guest';
 
 export interface Mob {
   group: THREE.Group;
-  body: THREE.Mesh;
+  body?: THREE.Mesh;              // 절차(슬라임) 폴백 전용 — 스켈레톤은 mixer 사용
+  mixer?: THREE.AnimationMixer;   // 글TF 몹 애니메이션
   hp: number;
   speed: number;
   atkCd: number;
@@ -16,7 +17,8 @@ export interface Mob {
 /* 게스트 쪽 몹: 호스트 스냅샷 위치(tx,tz)로 보간만 한다 */
 export interface GuestMob {
   group: THREE.Group;
-  body: THREE.Mesh;
+  body?: THREE.Mesh;
+  mixer?: THREE.AnimationMixer;
   tx?: number;
   tz?: number;
   wob?: number;

@@ -1,8 +1,61 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { scene } from './scene';
 import { rand, M } from '../utils';
 
 export let ground: THREE.Mesh;
+
+/* 배경 소품: Quaternius Ultimate Stylized Nature (CC0).
+ * 로딩 실패 시 기존 절차(원뿔 나무/대나무)로 폴백. */
+const NATURE = {
+  // [이름, 바닥 오프셋(모델 최저점 보정), 최소스케일, 최대스케일]
+  trees: [
+    ['BirchTree_1', .02, .8, 1.2],
+    ['BirchTree_2', .02, .8, 1.2],
+    ['BirchTree_3', .01, .7, 1.1],
+  ],
+  shrubs: [
+    ['Bush', .64, .9, 1.5],
+    ['Bush_Large', .78, .9, 1.4],
+    ['Bush_Flowers', .64, .9, 1.5],
+    ['Flower_1_Clump', .0, .9, 1.3],
+  ],
+} as const;
+
+type NatureEntry = readonly [string, number, number, number];
+let natureTemplate: { trees: THREE.Object3D[]; shrubs: THREE.Object3D[] } | null = null;
+
+export async function loadNatureAssets(): Promise<boolean> {
+  try {
+    const loader = new GLTFLoader();
+    const load = (e: NatureEntry) => loader.loadAsync(`/models/nature/${e[0]}.gltf`).then(g => g.scene);
+    const [trees, shrubs] = await Promise.all([
+      Promise.all(NATURE.trees.map(load)),
+      Promise.all(NATURE.shrubs.map(load)),
+    ]);
+    natureTemplate = { trees, shrubs };
+    return true;
+  } catch (e) {
+    console.error('nature assets load failed:', e);
+    return false;
+  }
+}
+
+function scatter(templates: THREE.Object3D[], entries: readonly NatureEntry[], count: number, range: number, clear: number) {
+  for (let i = 0; i < count; i++) {
+    const k = Math.floor(Math.random() * templates.length);
+    const inst = templates[k].clone(true);
+    const [, yOff, sMin, sMax] = entries[k];
+    const s = rand(sMin, sMax);
+    inst.scale.setScalar(s);
+    inst.rotation.y = rand(0, Math.PI * 2);
+    inst.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+    let x, z;
+    do { x = rand(-range, range); z = rand(-range, range); } while (Math.hypot(x, z) < clear);
+    inst.position.set(x, yOff * s, z);
+    scene.add(inst);
+  }
+}
 
 export function buildTerrain() {
   ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), M(0x2c5e38));
@@ -11,6 +64,12 @@ export function buildTerrain() {
     const p = new THREE.Mesh(new THREE.CircleGeometry(rand(.6, 2.4), 10), M(Math.random() < .5 ? 0x275434 : 0x336b40));
     p.rotation.x = -Math.PI / 2; p.position.set(rand(-90, 90), .01, rand(-90, 90)); scene.add(p);
   }
+  if (natureTemplate) {
+    scatter(natureTemplate.trees, NATURE.trees, 48, 90, 8);
+    scatter(natureTemplate.shrubs, NATURE.shrubs, 40, 80, 6);
+    return;
+  }
+  // 폴백: 절차 나무/대나무
   for (let i = 0; i < 55; i++) {
     const g = new THREE.Group();
     const h = rand(2.4, 4.6);
