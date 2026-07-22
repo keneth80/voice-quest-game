@@ -7,6 +7,7 @@ export interface PlayerNetState {
   z: number;
   yaw: number;
   w: 0 | 1; // walking
+  c?: number; // 캐릭터 인덱스 (상점에서 의상 구매 시 변경 — 02 §8 경제)
 }
 
 export interface SnapshotPlayer extends PlayerNetState {
@@ -25,13 +26,16 @@ export type GuestMessage =
   | { t: 'hello'; name: string }
   | ({ t: 'me' } & PlayerNetState)
   | { t: 'chat'; text: string }
-  | { t: 'huh' };
+  | { t: 'huh' }
+  | { t: 'gift'; to: string; amount: number };   // 후원: 다른 플레이어에게 은자 보내기
 
 /* 호스트 → 게스트 (브로드캐스트) */
 export type HostMessage =
   | ({ t: 'snap' } & Snapshot)
   | { t: 'chat'; id: string; n: string; text: string }
-  | { t: 'huh'; id: string };
+  | { t: 'huh'; id: string }
+  | { t: 'grant'; id: string; amount: number }   // 몹 드랍 은자 지급 (해당 id만 적용)
+  | { t: 'gift'; from: string; n: string; to: string; amount: number }; // 후원 중계
 
 /* 10Hz 상태 송신에 필요한 로컬 데이터를 transport가 당겨가는 인터페이스 */
 export interface LocalStateProvider {
@@ -53,6 +57,8 @@ export interface TransportCallbacks {
   onHuh(id: string): void;
   onSnapshot(snap: Snapshot): void;               // 게스트: 자기 자신은 제거된 스냅샷
   onHostDisconnected(): void;                     // 게스트: 호스트 연결 끊김
+  onCoinGrant(amount: number): void;              // 나에게 은자 지급 (몹 드랍)
+  onGift(fromName: string, toId: string, amount: number, toMe: boolean): void; // 후원 알림
 }
 
 export interface Transport {
@@ -61,4 +67,6 @@ export interface Transport {
   join(code: string): void;
   sendChat(text: string): void;
   sendHuh(): void;
+  grantCoins(id: string, amount: number): void;   // 호스트 전용: 게스트에게 드랍 지급
+  sendGift(toId: string, amount: number): void;   // 후원 보내기
 }

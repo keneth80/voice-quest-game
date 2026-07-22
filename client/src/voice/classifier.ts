@@ -4,6 +4,7 @@ import { moveForward, moveSide } from '../game/player';
 import { commandAttack } from '../game/combat';
 import { confuse } from './confusion';
 import { softenChat } from './soften';
+import { openShop } from '../ui/shop';
 
 const COMMANDISH = /(해줘|해봐|해라|하라|하자|가자|해|줘|봐|라|자|춰|쳐|어라|아라)\s*[.!?]*$/;
 
@@ -24,6 +25,7 @@ export function handleUtterance(text: string, conf?: number) {
   if (has('뒤로', '후진')) { sayMe(t); netSendChat(t); moveForward(-6); return; }
   if (has('왼쪽')) { sayMe(t); netSendChat(t); moveSide(-6); return; }
   if (has('오른쪽')) { sayMe(t); netSendChat(t); moveSide(6); return; }
+  if (has('상점', '가게', '저잣거리')) { sayMe(t); netSendChat(t); openShop(); return; }
   if (COMMANDISH.test(t) && t.length <= 14) { confuse('unknown'); return; }
   sayMe(t); netSendChat(t); // 일반 대화 → 모두에게 전송
 }

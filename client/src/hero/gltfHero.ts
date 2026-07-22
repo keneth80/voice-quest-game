@@ -7,7 +7,7 @@ import { blobShadow } from '../world/terrain';
  * 캐릭터 glb에는 클립이 없고, 같은 Rig_Medium 골격을 쓰는 애니메이션 glb에서
  * 클립을 가져와 이름 기반(PropertyBinding)으로 재생한다.
  * 캐릭터/클립/무기 교체는 아래 상수만 바꾸면 된다. */
-const CHARACTERS = ['Knight', 'Barbarian', 'Rogue', 'Rogue_Hooded', 'Mage', 'Ranger'];
+export const CHARACTERS = ['Knight', 'Barbarian', 'Rogue', 'Rogue_Hooded', 'Mage', 'Ranger'];
 const MY_CHARACTER = 'Knight'; // 내 캐릭터 (원본도 로컬은 고정 청색 도포였던 것과 동일한 정책)
 const ANIM_URLS = [
   '/models/Rig_Medium_MovementBasic.glb',

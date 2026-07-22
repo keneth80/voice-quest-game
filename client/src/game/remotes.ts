@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { scene } from '../world/scene';
 import { makeHero } from '../hero/makeHero';
-import { makeGltfHero, pickCharacter } from '../hero/gltfHero';
+import { makeGltfHero, pickCharacter, CHARACTERS } from '../hero/gltfHero';
 import { nameSprite } from '../hero/sprites';
 import { state } from './state';
 import type { Remote } from './state';
@@ -28,6 +28,19 @@ export function ensureRemote(id: string, name?: string): Remote {
   state.remotes[id] = { group, visual, tag, bubbleEl, bubbleT: 0, tx: 0, tz: 0, yaw: 0, walking: false, shrugT: 0, slashT: 0 };
   updatePCount();
   return state.remotes[id];
+}
+
+/* 원격 플레이어가 상점에서 의상을 사면 c 인덱스가 바뀌어 도착 → 비주얼 재생성 */
+export function applyRemoteChar(r: Remote, c?: number) {
+  if (c === undefined || r.charIdx === c) return;
+  const name = CHARACTERS[c];
+  if (!name) return;
+  const v = makeGltfHero(undefined, name);
+  if (!v) return;
+  r.charIdx = c;
+  r.group.remove(r.visual.root);
+  r.visual = v;
+  r.group.add(v.root);
 }
 
 export function removeRemote(id: string) {
@@ -61,6 +74,7 @@ export function applySnapshot(d: Snapshot) {
     seen[q.id] = 1;
     const r = ensureRemote(q.id, q.n);
     r.tx = q.x; r.tz = q.z; r.yaw = q.yaw; r.walking = !!q.w;
+    applyRemoteChar(r, q.c);
     if (r.tag && q.n && r.lastName !== q.n) { r.lastName = q.n; }
   }
   for (const id of Object.keys(state.remotes)) if (!seen[id]) removeRemote(id);

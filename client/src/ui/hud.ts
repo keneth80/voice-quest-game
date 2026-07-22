@@ -22,6 +22,10 @@ export function setKills(n: number) {
   document.getElementById('kills')!.textContent = String(n);
 }
 
+export function setCoins(n: number) {
+  document.getElementById('coins')!.textContent = String(n);
+}
+
 export function setPCount(n: number) {
   document.getElementById('pcount')!.textContent = String(n);
 }

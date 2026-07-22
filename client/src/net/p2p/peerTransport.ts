@@ -65,6 +65,10 @@ export class PeerTransport implements Transport {
     } else if (d.t === 'huh') {
       this.cb.onHuh(id);
       this.broadcast({ t: 'huh', id }, id);
+    } else if (d.t === 'gift') {
+      const n = this.names[id] || '???';
+      this.cb.onGift(n, d.to, d.amount, d.to === 'H'); // 호스트 자신이 수신자면 toMe
+      this.broadcast({ t: 'gift', from: id, n, to: d.to, amount: d.amount }, id);
     }
   }
 
@@ -103,6 +107,8 @@ export class PeerTransport implements Transport {
       this.cb.onSnapshot({ ps, mobs: d.mobs, k: d.k });
     } else if (d.t === 'chat') this.cb.onChat(d.id, d.n, d.text);
     else if (d.t === 'huh') this.cb.onHuh(d.id);
+    else if (d.t === 'grant') { if (this.peer && d.id === this.peer.id) this.cb.onCoinGrant(d.amount); }
+    else if (d.t === 'gift') this.cb.onGift(d.n, d.to, d.amount, !!this.peer && d.to === this.peer.id);
   }
 
   /* --- 공통 송신 --- */
@@ -114,5 +120,16 @@ export class PeerTransport implements Transport {
   sendHuh() {
     if (this.mode === 'host') this.broadcast({ t: 'huh', id: 'H' });
     else if (this.mode === 'guest' && this.hostConn) this.hostConn.send({ t: 'huh' } satisfies GuestMessage);
+  }
+
+  /* 호스트 전용: 몹 드랍 은자를 처치자에게 지급 (해당 id의 게스트만 적용) */
+  grantCoins(id: string, amount: number) {
+    if (this.mode === 'host') this.broadcast({ t: 'grant', id, amount });
+  }
+
+  /* 후원 보내기 — 호스트는 직접 중계, 게스트는 호스트를 경유 */
+  sendGift(toId: string, amount: number) {
+    if (this.mode === 'host') this.broadcast({ t: 'gift', from: 'H', n: this.local.getName(), to: toId, amount });
+    else if (this.mode === 'guest' && this.hostConn) this.hostConn.send({ t: 'gift', to: toId, amount } satisfies GuestMessage);
   }
 }

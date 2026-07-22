@@ -38,6 +38,7 @@ export interface Remote {
   shrugT: number;
   slashT: number;
   lastName?: string;
+  charIdx?: number; // 네트워크로 전파된 캐릭터(의상) 인덱스
 }
 
 export interface PlayerState {
@@ -67,6 +68,9 @@ export const state = {
   guestMobs: [] as GuestMob[],
   kills: 0,
   hp: 100,
+  /* 경제 데모 (02 §8): 은자 잔고와 내 캐릭터(의상). 세션 내 유지 — 영속화는 서버 단계 */
+  coins: 0,
+  myChar: 'Knight',
   /* 갸웃 제스처: 150프레임 카운터. >0인 동안 카메라 camYaw 갱신이 중단된다(시그니처 UX) */
   confusion: 0,
   preYaw: 0,

@@ -30,6 +30,25 @@
     border:2px solid rgba(255,255,255,.3); background:radial-gradient(circle at 35% 30%,#ffb75e,#d5541f); color:#fff; font-size:22px; cursor:pointer; user-select:none; }
   #testbtn { position:absolute; left:12px; bottom:26px; z-index:12; border:1px solid rgba(255,255,255,.25);
     background:rgba(10,14,30,.7); color:#cdd6ff; border-radius:10px; padding:8px 12px; font-size:12px; cursor:pointer; }
+  #shopbtn { position:absolute; left:12px; bottom:66px; z-index:12; border:1px solid rgba(255,217,74,.45);
+    background:rgba(30,24,10,.75); color:#ffd94a; border-radius:10px; padding:8px 12px; font-size:12px; cursor:pointer; }
+  /* 상점(저잣거리) 패널 */
+  #shop { position:absolute; inset:0; z-index:45; background:rgba(6,9,20,.7); display:none; align-items:center; justify-content:center; }
+  #shopbox { width:min(92vw,420px); max-height:80vh; overflow-y:auto; background:rgba(22,18,10,.96);
+    border:1px solid rgba(255,217,74,.4); border-radius:18px; padding:20px 18px; color:#fff; }
+  #shopbox h2 { font-size:17px; margin-bottom:4px; color:#ffd94a; }
+  #shopbox .coins-line { font-size:12px; color:#cdb97a; margin-bottom:12px; }
+  .shop-item { display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(255,255,255,.05); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .shop-item .info { flex:1; }
+  .shop-item .name { font-size:13.5px; font-weight:700; }
+  .shop-item .desc { font-size:11px; color:#9aa4c7; margin-top:2px; }
+  .shop-item button { border:none; border-radius:9px; padding:8px 12px; font-size:12.5px; font-weight:700;
+    cursor:pointer; color:#1a1408; background:linear-gradient(90deg,#ffd94a,#f0a93c); white-space:nowrap; }
+  #giftbtn { width:100%; margin-top:6px; padding:11px; border:none; border-radius:10px; font-size:13px;
+    font-weight:700; cursor:pointer; color:#fff; background:linear-gradient(90deg,#e56aa2,#a24ae5); }
+  #shopclose { width:100%; margin-top:8px; padding:10px; border:1px solid rgba(255,255,255,.25); border-radius:10px;
+    font-size:12.5px; cursor:pointer; color:#cdd6ff; background:transparent; }
   #hint { position:absolute; left:50%; transform:translateX(-50%); bottom:6px; z-index:10; color:#7c88b8; font-size:11px; text-align:center; width:92%; pointer-events:none; }
   #interim { position:absolute; left:50%; transform:translateX(-50%); bottom:110px; z-index:11; color:#fff;
     background:rgba(70,90,220,.55); border-radius:14px; padding:6px 14px; font-size:14px; display:none; max-width:80vw; }
@@ -76,6 +95,7 @@
   <div class="panel">
     <div class="label">🗡️ <span id="myname">나</span></div>
     <div class="bar"><div id="hpfill"></div></div>
+    <div class="label" style="margin-top:5px">💰 은자 <b id="coins" style="font-size:14px;color:#ffd94a">0</b></div>
   </div>
   <div class="panel" style="text-align:right">
     <div class="label">⚔️ 처치 <b id="kills" style="font-size:16px">0</b> · 👥 접속 <b id="pcount" style="font-size:16px">1</b></div>
@@ -88,6 +108,16 @@
 <div id="miclabel">누르면 듣기 시작</div>
 <button id="atkbtn">⚔️</button>
 <button id="testbtn">😕 제스처 테스트</button>
+<button id="shopbtn">🛍️ 저잣거리</button>
+<div id="shop">
+  <div id="shopbox">
+    <h2>🛍️ 저잣거리</h2>
+    <div class="coins-line">보유 은자: <b id="shopcoins">0</b> · 요괴를 처치하면 은자를 얻습니다</div>
+    <div id="shopitems"></div>
+    <button id="giftbtn">💝 근처 플레이어에게 은자 10 후원</button>
+    <button id="shopclose">닫기</button>
+  </div>
+</div>
 <div id="hint">땅 터치 = 이동 · 🎤 명령("공격해","멈춰")과 채팅이 모두 음성으로 · 친구에게 방 코드를 알려주세요</div>
 
 <script type="module" src="/src/main.ts"></script>

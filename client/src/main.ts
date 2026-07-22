@@ -10,7 +10,10 @@ import { commandAttack } from './game/combat';
 import { state } from './game/state';
 import { addChat } from './ui/hud';
 import { initLobby, setLobbyMsg, showRoomCode, closeLobby } from './ui/lobby';
-import { ensureRemote, removeRemote, showRemoteChat, showRemoteHuh, applySnapshot } from './game/remotes';
+import { ensureRemote, removeRemote, showRemoteChat, showRemoteHuh, applySnapshot, applyRemoteChar } from './game/remotes';
+import { CHARACTERS } from './hero/gltfHero';
+import { addCoins } from './game/economy';
+import { initShop } from './ui/shop';
 import { PeerTransport } from './net/p2p/peerTransport';
 import type { LocalStateProvider, Transport, TransportCallbacks } from './net/transport';
 import { startLoop } from './game/loop';
@@ -26,7 +29,11 @@ const provider: LocalStateProvider = {
   getName: () => state.myName,
   getPlayerState: () => {
     const p = state.player.group.position;
-    return { x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +state.player.yaw.toFixed(2), w: state.player.walking ? 1 : 0 };
+    return {
+      x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +state.player.yaw.toFixed(2),
+      w: state.player.walking ? 1 : 0 as 0 | 1,
+      c: CHARACTERS.indexOf(state.myChar), // 의상 동기화 (경제 데모)
+    };
   },
   getMobPositions: () => state.mobs.map(m => [+m.group.position.x.toFixed(2), +m.group.position.z.toFixed(2)] as [number, number]),
   getKills: () => state.kills,
@@ -50,11 +57,16 @@ const callbacks: TransportCallbacks = {
   },
   onPeerJoin(id, name) { ensureRemote(id, name); addChat('', '⚡ ' + name + ' 님이 입장했습니다!', 'sys'); },
   onPeerLeave(id, name) { addChat('', (name || '누군가') + ' 님이 떠났습니다.', 'sys'); removeRemote(id); },
-  onPeerState(id, name, s) { const r = ensureRemote(id, name); r.tx = s.x; r.tz = s.z; r.yaw = s.yaw; r.walking = !!s.w; },
+  onPeerState(id, name, s) { const r = ensureRemote(id, name); r.tx = s.x; r.tz = s.z; r.yaw = s.yaw; r.walking = !!s.w; applyRemoteChar(r, s.c); },
   onChat(id, name, text) { showRemoteChat(id, name, text); },
   onHuh(id) { showRemoteHuh(id); },
   onSnapshot(snap) { applySnapshot(snap); },
   onHostDisconnected() { addChat('', '⚠️ 호스트와 연결이 끊어졌습니다.', 'sys'); },
+  onCoinGrant(amount) { addCoins(amount, '요괴 퇴치'); },
+  onGift(fromName, _toId, amount, toMe) {
+    if (toMe) addCoins(amount, `${fromName}님의 후원 💝`);
+    else addChat('', `💝 ${fromName}님이 후원을 보냈습니다`, 'sys');
+  },
 };
 
 /* transport 교체 지점: Colyseus(WebSocket) 구현체가 생기면 net/ws/의 구현으로 이 팩토리만 바꾼다 */
@@ -74,6 +86,7 @@ async function boot() {
   });
   initInput();
   initVoice();
+  initShop();
   document.getElementById('testbtn')!.onclick = () => confuse('unknown');
   document.getElementById('atkbtn')!.onclick = () => commandAttack();
 

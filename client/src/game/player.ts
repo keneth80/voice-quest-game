@@ -16,6 +16,15 @@ export function initPlayer() {
   qmark = makeQSprite(); qmark.position.y = 2.8; state.player.group.add(qmark);
 }
 
+/* 상점에서 의상 구매 시 내 캐릭터 교체 — 네트워크에는 'me'의 c 인덱스로 전파 */
+export function setPlayerCharacter(name: string) {
+  const next = makeGltfHero(undefined, name);
+  if (!next) return;
+  state.player.group.remove(state.player.visual.root);
+  state.player.visual = next;
+  state.player.group.add(next.root);
+}
+
 export function moveMe() {
   const player = state.player;
   const p = player.group.position;

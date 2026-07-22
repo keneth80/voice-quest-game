@@ -5,6 +5,7 @@ import { state } from './state';
 import type { Mob } from './state';
 import { activeMobs, nearestMobOf } from './mobs';
 import { addChat, setKills } from '../ui/hud';
+import { awardKill } from './economy';
 
 export interface Burst {
   mesh: THREE.Mesh;
@@ -24,7 +25,7 @@ export function burst(pos: THREE.Vector3, color: number) {
   }
 }
 
-export function damage(m: Mob, amt: number, from?: { x: number; z: number }) {
+export function damage(m: Mob, amt: number, from?: { x: number; z: number; id?: string }) {
   m.hp -= amt;
   burst(m.group.position, 0xffc44a);
   if (m.body) { m.body.scale.set(1.25, .6, 1.25); setTimeout(() => m.body && m.body.scale.set(1, .85, 1), 120); } // 슬라임 폴백 스쿼시
@@ -38,6 +39,7 @@ export function damage(m: Mob, amt: number, from?: { x: number; z: number }) {
     burst(m.group.position, 0x8aff9a); burst(m.group.position, 0xffffff);
     scene.remove(m.group); state.mobs = state.mobs.filter(z => z !== m);
     state.kills++; setKills(state.kills);
+    if (from?.id) awardKill(from.id); // 처치자에게 은자 드랍 (경제 데모)
   }
 }
 
